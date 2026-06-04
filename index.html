@@ -4,8 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jugnu Sticker Creator</title>
-    <!-- Dynamically pulling qrcode.js for client-side QR generation -->
+    
+    <!-- Core External Dependencies -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <!-- MindAR Face Tracking & Three.js Core Libraries for WebAR Framework -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.123.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mind-ar/face@1.2.1/dist/mindar-face-three.prod.js"></script>
+    
     <style>
         :root {
             --bg-color: #0f0f11;
@@ -25,6 +31,7 @@
             align-items: center;
             justify-content: center;
             min-height: 100vh;
+            overflow-x: hidden;
         }
 
         .app-container {
@@ -33,6 +40,7 @@
             padding: 20px;
             box-sizing: border-box;
             text-align: center;
+            transition: opacity 0.3s ease;
         }
 
         h1 {
@@ -163,7 +171,6 @@
             gap: 12px;
         }
 
-        /* FIXED: All action buttons share unified visual specs matching Download button */
         .btn {
             flex: 1;
             padding: 16px;
@@ -187,7 +194,59 @@
             box-shadow: 0 12px 24px rgba(255, 107, 53, 0.4);
         }
 
-        /* Modal Structure for QR Code Container Popup */
+        /* --- AR VIEW STYLING LAYERS --- */
+        #ar-container {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 50;
+            background: #000;
+        }
+
+        /* Floating UI Panel positioned on top of the webcam feed stream */
+        .ar-ui {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 400px;
+            z-index: 60;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .cheek-selector {
+            display: flex;
+            background: rgba(24, 24, 28, 0.85);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 6px;
+            backdrop-filter: blur(10px);
+        }
+
+        .cheek-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #a0a0ab;
+            padding: 12px;
+            font-weight: 700;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .cheek-btn.active {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        /* Base QR Modal Configurations */
         .qr-modal {
             display: none;
             position: fixed;
@@ -252,7 +311,8 @@
 </head>
 <body>
 
-    <div class="app-container">
+    <!-- Main Dashboard UI -->
+    <div class="app-container" id="main-ui">
         <h1>XRCC_GG</h1>
         <div class="subtitle">Jugnu Spatial Companion</div>
 
@@ -277,17 +337,28 @@
         </div>
 
         <div class="action-stack">
-            <button class="btn" onclick="downloadSticker()">
-                ⬇️ Download Sticker
-            </button>
             <div class="action-row">
-                <button class="btn" onclick="shareSticker()">
-                    📢 Share Sticker
-                </button>
-                <button class="btn" onclick="toggleQRModal(true)">
-                    📱 Scan QR Link
-                </button>
+                <button class="btn" onclick="downloadSticker()">⬇️ Download</button>
+                <button class="btn" onclick="startARLiveView()">✨ View AR Face</button>
             </div>
+            <div class="action-row">
+                <button class="btn" onclick="shareSticker()">📢 Share App</button>
+                <button class="btn" onclick="toggleQRModal(true)">📱 Scan QR Link</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live AR Camera Layer Context Container -->
+    <div id="ar-container">
+        <div class="ar-ui">
+            <!-- Cheek Placement Selection Switch -->
+            <div class="cheek-selector">
+                <button class="cheek-btn active" onclick="switchCheekPlacement('left', event)">Left Cheek</button>
+                <button class="cheek-btn" onclick="switchCheekPlacement('right', event)">Right Cheek</button>
+            </div>
+            <button class="btn" onclick="stopARLiveView()" style="background: rgba(220, 53, 69, 0.9); box-shadow: none;">
+                ❌ Exit AR Face Mode
+            </button>
         </div>
     </div>
 
@@ -311,6 +382,13 @@
         let animationFrameId = null;
         let waveOffsetY = 0;
         let waveRotation = 0; 
+
+        // Core Tracking State Engines
+        let mindidFaceThree = null;
+        let arTexture = null;
+        let arActive = false;
+        let currentCheek = 'left';
+        let anchorMesh = null;
 
         const jugnuBase = new Image();
         jugnuBase.src = './Jugnu_base.png';
@@ -371,6 +449,11 @@
 
             const activeFaceY = cy + waveOffsetY;
             drawExpressionLayer(ctx, cx, activeFaceY, currentExpression);
+
+            // Update AR Texture map seamlessly if active
+            if (arActive && arTexture) {
+                arTexture.needsUpdate = true;
+            }
 
             animationFrameId = requestAnimationFrame(render);
         }
@@ -480,7 +563,6 @@
         }
 
         function generateStaticFrame() {
-            cancelAnimationFrame(animationFrameId);
             let temporaryWaveOffset = waveOffsetY;
             let temporaryRotationOffset = waveRotation;
             waveOffsetY = 0;
@@ -491,7 +573,6 @@
             
             waveOffsetY = temporaryWaveOffset;
             waveRotation = temporaryRotationOffset;
-            animationFrameId = requestAnimationFrame(render);
             
             return dataUrl;
         }
@@ -527,6 +608,84 @@
             } catch (err) {
                 console.error("Share failed:", err);
             }
+        }
+
+        // --- AR EMBEDDED MATRIX EXECUTION ENGINE ---
+        async function startARLiveView() {
+            const mainUi = document.getElementById('main-ui');
+            const arContainer = document.getElementById('ar-container');
+            
+            mainUi.style.opacity = '0';
+            setTimeout(() => mainUi.style.display = 'none', 300);
+            arContainer.style.display = 'block';
+
+            // Initialize MindAR Face tracking core engine
+            mindidFaceThree = new mindarFaceThree.MindARFaceThree({
+                container: arContainer
+            });
+
+            const {renderer, scene, camera} = mindidFaceThree;
+            
+            // Map the canvas drawing as a real-time responsive WebGL Texture
+            arTexture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshBasicMaterial({ map: arTexture, transparent: true });
+            const geometry = new THREE.PlaneGeometry(0.35, 0.35);
+            anchorMesh = new THREE.Mesh(geometry, material);
+
+            // Anchor indices: Left cheek = 433, Right cheek = 213 (Standard MediaPipe Landmark Mesh indices)
+            const anchorIndex = currentCheek === 'left' ? 433 : 213;
+            const anchor = mindidFaceThree.addAnchor(anchorIndex);
+            
+            // Shift geometry slightly forward to prevent clipping through skin
+            anchorMesh.position.set(0, 0, 0.02); 
+            anchor.group.add(anchorMesh);
+
+            arActive = true;
+            await mindidFaceThree.start();
+            
+            renderer.setAnimationLoop(() => {
+                renderer.render(scene, camera);
+            });
+        }
+
+        function switchCheekPlacement(side, event) {
+            currentCheek = side;
+            document.querySelectorAll('.cheek-btn').forEach(btn => btn.classList.remove('active'));
+            if(event && event.currentTarget) {
+                event.currentTarget.classList.add('active');
+            }
+            
+            // Re-map the tracking anchors on the fly if the web view is running live
+            if (arActive && mindidFaceThree) {
+                const oldAnchorIndex = side === 'left' ? 213 : 433;
+                const newAnchorIndex = side === 'left' ? 433 : 213;
+                
+                // Tear down existing geometry mapping matrices gracefully
+                mindidFaceThree.anchors[oldAnchorIndex].group.remove(anchorMesh);
+                
+                // Hot swap spatial anchors instantly
+                const nextAnchor = mindidFaceThree.addAnchor(newAnchorIndex);
+                nextAnchor.group.add(anchorMesh);
+            }
+        }
+
+        function stopARLiveView() {
+            arActive = false;
+            if (mindidFaceThree) {
+                mindidFaceThree.stop();
+                // Tear down child processing operations inside document structure safely
+                const videoEl = arContainer.querySelector('video');
+                if (videoEl) videoEl.remove();
+                const canvasEl = arContainer.querySelector('canvas');
+                if (canvasEl) canvasEl.remove();
+            }
+
+            const mainUi = document.getElementById('main-ui');
+            const arContainer = document.getElementById('ar-container');
+            
+            arContainer.style.display = 'none';
+            mainUi.style.display = 'flex';
+            setTimeout(() => mainUi.style.opacity = '1', 50);
         }
 
         let qrGenerated = false;

@@ -383,9 +383,9 @@
         </div>
         <div class="ar-ui">
             <div class="cheek-selector">
-                <button id="leftCheekBtn" class="cheek-btn active">Left Cheek</button>
-                <button id="noseBtn" class="cheek-btn">Nose</button>
-                <button id="rightCheekBtn" class="cheek-btn">Right Cheek</button>
+                <button id="tattooBtn" class="cheek-btn active">Cheek Tattoo</button>
+                <button id="orbitBtn" class="cheek-btn">Face Orbit</button>
+                <button id="shoulderBtn" class="cheek-btn">Shoulder Pet</button>
             </div>
             <button id="exitArBtn" class="btn" style="background: rgba(220, 53, 69, 0.9); box-shadow: none;">
                 ❌ Exit AR Face Mode
@@ -597,7 +597,7 @@
             }
 
             if (window.startAsynchronousAR) {
-                window.startAsynchronousAR(currentCheek).catch(err => {
+                window.startAsynchronousAR().catch(err => {
                     alert("AR Initialization Error:\n" + err.message + "\n\nPlease verify that your device has a camera, camera permissions are granted, and you are accessing a secure URL.");
                 });
             } else {
@@ -605,10 +605,10 @@
             }
         };
 
-        // Listen for internal side toggles inside standard namespace layout boundaries
-        document.getElementById('leftCheekBtn').addEventListener('click', () => { if(window.switchARAnchorSide) window.switchARAnchorSide('left'); });
-        document.getElementById('noseBtn').addEventListener('click', () => { if(window.switchARAnchorSide) window.switchARAnchorSide('nose'); });
-        document.getElementById('rightCheekBtn').addEventListener('click', () => { if(window.switchARAnchorSide) window.switchARAnchorSide('right'); });
+        // Listen for internal mode toggles inside standard namespace layout boundaries
+        document.getElementById('tattooBtn').addEventListener('click', () => { if(window.switchARMode) window.switchARMode('tattoo'); });
+        document.getElementById('orbitBtn').addEventListener('click', () => { if(window.switchARMode) window.switchARMode('orbit'); });
+        document.getElementById('shoulderBtn').addEventListener('click', () => { if(window.switchARMode) window.switchARMode('shoulder'); });
         document.getElementById('exitArBtn').addEventListener('click', () => { if(window.terminateARViewport) window.terminateARViewport(); });
 
         // Expose global execution state toggles safely
@@ -629,11 +629,15 @@
 
         let mindarThree = null;
         let leftAnchor = null;
-        let noseAnchor = null;
         let rightAnchor = null;
+        let noseAnchor = null;
+        let chinAnchor = null;
         let anchorMesh = null;
+        let material = null;
+        let currentArMode = 'tattoo';
+        let randomCheek = 'left';
 
-        window.startAsynchronousAR = async function(initialSide) {
+        window.startAsynchronousAR = async function() {
             const mainUi = document.getElementById('main-ui');
             const arContainer = document.getElementById('ar-container');
             
@@ -645,49 +649,29 @@
             const { renderer, scene, camera } = mindarThree;
             
             window.arTextureRef = new THREE.CanvasTexture(window.getCanvasRef());
-            const material = new THREE.MeshBasicMaterial({ map: window.arTextureRef, transparent: true });
+            material = new THREE.MeshBasicMaterial({ map: window.arTextureRef, transparent: true });
             const geometry = new THREE.PlaneGeometry(0.35, 0.35);
             anchorMesh = new THREE.Mesh(geometry, material);
-            anchorMesh.position.set(0, 0, 0.005);
+            
+            // Randomly choose left or right cheek on startup for the tattoo mode
+            randomCheek = Math.random() < 0.5 ? 'left' : 'right';
+            currentArMode = 'tattoo';
 
             leftAnchor = mindarThree.addAnchor(234);
-            noseAnchor = mindarThree.addAnchor(4);
             rightAnchor = mindarThree.addAnchor(454);
+            noseAnchor = mindarThree.addAnchor(4);
+            chinAnchor = mindarThree.addAnchor(152);
 
-            // Add visual debug elements
-            try {
-                // 1. Face mesh wireframe for mapping visualization
-                const faceMesh = mindarThree.addFaceMesh();
-                if (faceMesh && faceMesh.material) {
-                    faceMesh.material.wireframe = true;
-                    faceMesh.material.transparent = true;
-                    faceMesh.material.opacity = 0.4;
-                    faceMesh.material.color.setHex(0xff6b35); // matches --accent-color
-                    scene.add(faceMesh);
-                }
-
-                // 2. Anchor point debug spheres
-                const debugGeometry = new THREE.SphereGeometry(0.015, 8, 8);
-                
-                const leftDebugSphere = new THREE.Mesh(debugGeometry, new THREE.MeshBasicMaterial({ color: 0x00ff00 })); // Green
-                leftAnchor.group.add(leftDebugSphere);
-
-                const noseDebugSphere = new THREE.Mesh(debugGeometry, new THREE.MeshBasicMaterial({ color: 0xff0000 })); // Red
-                noseAnchor.group.add(noseDebugSphere);
-
-                const rightDebugSphere = new THREE.Mesh(debugGeometry, new THREE.MeshBasicMaterial({ color: 0x00ff00 })); // Green
-                rightAnchor.group.add(rightDebugSphere);
-            } catch (debugErr) {
-                console.warn("Could not load visual debug overlays:", debugErr);
-            }
-
-            if (initialSide === 'left') {
+            // Initial placement: place anchorMesh on the selected random cheek anchor group
+            if (randomCheek === 'left') {
                 leftAnchor.group.add(anchorMesh);
-            } else if (initialSide === 'nose') {
-                noseAnchor.group.add(anchorMesh);
             } else {
                 rightAnchor.group.add(anchorMesh);
             }
+            
+            anchorMesh.position.set(0, 0, 0.005);
+            anchorMesh.rotation.set(0, 0, 0);
+            anchorMesh.scale.setScalar(1.0);
 
             window.setArStateActive(true);
             
@@ -695,7 +679,32 @@
                 await mindarThree.start();
                 const loadingEl = document.getElementById('ar-loading');
                 if (loadingEl) loadingEl.style.display = 'none';
-                renderer.setAnimationLoop(() => { renderer.render(scene, camera); });
+                
+                renderer.setAnimationLoop(() => {
+                    // Update animation for orbiting if in orbit mode
+                    if (currentArMode === 'orbit') {
+                        const angle = (Date.now() / 1000) * 1.5; // Orbit speed
+                        const radius = 0.45; // Orbit radius
+                        const x = Math.sin(angle) * radius;
+                        const y = Math.sin(angle * 1.5) * 0.08; // 3D wave motion
+                        const z = Math.cos(angle) * radius; // depth relative to nose tip
+                        
+                        anchorMesh.position.set(x, y, z);
+                        anchorMesh.rotation.set(0, 0, 0); 
+                        
+                        // Depth illusion (scale and fade out when behind the face)
+                        if (z < 0) {
+                            const factor = (radius + z) / radius; // 1 to 0
+                            material.opacity = 0.2 + factor * 0.8;
+                            anchorMesh.scale.setScalar(0.6 + factor * 0.4);
+                        } else {
+                            material.opacity = 1.0;
+                            anchorMesh.scale.setScalar(1.0);
+                        }
+                    }
+                    
+                    renderer.render(scene, camera);
+                });
             } catch (err) {
                 console.error(err);
                 window.terminateARViewport();
@@ -703,22 +712,41 @@
             }
         };
 
-        window.switchARAnchorSide = function(side) {
+        window.switchARMode = function(mode) {
             document.querySelectorAll('.cheek-btn').forEach(btn => btn.classList.remove('active'));
-            const activeBtn = document.getElementById(`${side}CheekBtn`) || document.getElementById('noseBtn');
+            const btnId = mode === 'tattoo' ? 'tattooBtn' : (mode === 'orbit' ? 'orbitBtn' : 'shoulderBtn');
+            const activeBtn = document.getElementById(btnId);
             if (activeBtn) activeBtn.classList.add('active');
-            
-            if (leftAnchor && noseAnchor && rightAnchor && anchorMesh) {
-                leftAnchor.group.remove(anchorMesh);
-                noseAnchor.group.remove(anchorMesh);
-                rightAnchor.group.remove(anchorMesh);
 
-                if (side === 'left') {
-                    leftAnchor.group.add(anchorMesh);
-                } else if (side === 'nose') {
+            currentArMode = mode;
+
+            if (leftAnchor && rightAnchor && noseAnchor && chinAnchor && anchorMesh) {
+                // Remove from all groups
+                leftAnchor.group.remove(anchorMesh);
+                rightAnchor.group.remove(anchorMesh);
+                noseAnchor.group.remove(anchorMesh);
+                chinAnchor.group.remove(anchorMesh);
+
+                // Reset material & scaling defaults
+                material.opacity = 1.0;
+                anchorMesh.scale.setScalar(1.0);
+                anchorMesh.rotation.set(0, 0, 0);
+
+                if (mode === 'tattoo') {
+                    randomCheek = Math.random() < 0.5 ? 'left' : 'right';
+                    if (randomCheek === 'left') {
+                        leftAnchor.group.add(anchorMesh);
+                    } else {
+                        rightAnchor.group.add(anchorMesh);
+                    }
+                    anchorMesh.position.set(0, 0, 0.005);
+                } else if (mode === 'orbit') {
                     noseAnchor.group.add(anchorMesh);
-                } else {
-                    rightAnchor.group.add(anchorMesh);
+                    // Dynamically positioned in rendering loop
+                } else if (mode === 'shoulder') {
+                    chinAnchor.group.add(anchorMesh);
+                    anchorMesh.position.set(-0.32, -0.42, -0.10); // Offset to screen-left shoulder
+                    anchorMesh.scale.setScalar(1.25); // Slightly larger
                 }
             }
         };
@@ -728,6 +756,12 @@
             const arContainer = document.getElementById('ar-container');
             const loadingEl = document.getElementById('ar-loading');
             if (loadingEl) loadingEl.style.display = 'block';
+            
+            // Reset button active state for next run
+            document.querySelectorAll('.cheek-btn').forEach(btn => btn.classList.remove('active'));
+            const defaultBtn = document.getElementById('tattooBtn');
+            if (defaultBtn) defaultBtn.classList.add('active');
+
             if (mindarThree) {
                 mindarThree.stop();
                 const elSelectors = arContainer.querySelectorAll('video, canvas');
@@ -735,9 +769,11 @@
             }
             window.arTextureRef = null;
             leftAnchor = null;
-            noseAnchor = null;
             rightAnchor = null;
+            noseAnchor = null;
+            chinAnchor = null;
             anchorMesh = null;
+            material = null;
             arContainer.style.display = 'none';
             const mainUi = document.getElementById('main-ui');
             mainUi.style.display = 'block';

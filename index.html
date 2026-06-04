@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jugnu Sticker Creator</title>
+    <!-- Dynamically pulling qrcode.js for client-side QR generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         :root {
             --bg-color: #0f0f11;
@@ -42,7 +44,7 @@
 
         .subtitle {
             font-size: 0.9rem;
-            color: #ff6b35;
+            color: var(--accent-color);
             margin-bottom: 25px;
             font-weight: 600;
             text-transform: uppercase;
@@ -124,7 +126,7 @@
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 12px;
-            margin-bottom: 30px;
+            margin-bottom: 25px;
         }
 
         .exp-btn {
@@ -150,11 +152,18 @@
             box-shadow: 0 0 15px rgba(255, 107, 53, 0.2);
         }
 
-        .action-btns {
+        .action-stack {
             display: flex;
-            gap: 15px;
+            flex-direction: column;
+            gap: 12px;
         }
 
+        .action-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        /* FIXED: All action buttons share unified visual specs matching Download button */
         .btn {
             flex: 1;
             padding: 16px;
@@ -164,17 +173,80 @@
             font-weight: 700;
             cursor: pointer;
             transition: all 0.2s ease;
-        }
-
-        .btn-primary {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
             background-color: var(--accent-color);
             color: white;
             box-shadow: 0 8px 20px rgba(255, 107, 53, 0.3);
         }
 
-        .btn-primary:hover {
+        .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 12px 24px rgba(255, 107, 53, 0.4);
+        }
+
+        /* Modal Structure for QR Code Container Popup */
+        .qr-modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(15, 15, 17, 0.9);
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .qr-modal.show {
+            display: flex;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background-color: #1c1c22;
+            padding: 30px;
+            border-radius: 24px;
+            border: 2px solid #2d2d35;
+            max-width: 300px;
+            width: 80%;
+            text-align: center;
+            transform: scale(0.8);
+            transition: transform 0.3s ease;
+        }
+
+        .qr-modal.show .modal-content {
+            transform: scale(1);
+        }
+
+        #qrcode {
+            background: white;
+            padding: 16px;
+            border-radius: 16px;
+            display: inline-block;
+            margin: 20px 0;
+        }
+
+        #qrcode img {
+            display: block;
+            margin: 0 auto;
+        }
+
+        .close-btn {
+            background: #2d2d35;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            width: 100%;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -204,8 +276,27 @@
             <button class="exp-btn" onclick="setExpression('shocked', event)">O _ O</button>
         </div>
 
-        <div class="action-btns">
-            <button class="btn btn-primary" onclick="downloadSticker()">Download Sticker</button>
+        <div class="action-stack">
+            <button class="btn" onclick="downloadSticker()">
+                ⬇️ Download Sticker
+            </button>
+            <div class="action-row">
+                <button class="btn" onclick="shareSticker()">
+                    📢 Share Sticker
+                </button>
+                <button class="btn" onclick="toggleQRModal(true)">
+                    📱 Scan QR Link
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="qrModal" class="qr-modal" onclick="toggleQRModal(false)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <h3 style="margin-top: 0; font-weight: 800;">Scan to Open App!</h3>
+            <p style="color: #a0a0ab; font-size: 0.85rem; margin-bottom: 0;">Share this code with friends to promote JugnuXR!</p>
+            <div id="qrcode"></div>
+            <button class="close-btn" onclick="toggleQRModal(false)">Close</button>
         </div>
     </div>
 
@@ -219,6 +310,7 @@
         
         let animationFrameId = null;
         let waveOffsetY = 0;
+        let waveRotation = 0; 
 
         const jugnuBase = new Image();
         jugnuBase.src = './Jugnu_base.png';
@@ -243,6 +335,7 @@
 
         function render(timestamp = 0) {
             waveOffsetY = Math.sin(timestamp / 300) * 5;
+            waveRotation = Math.sin(timestamp / 600) * 0.04;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -264,17 +357,20 @@
             const xOffset = (canvas.width - renderWidth) / 2;
             const yOffset = (canvas.height - renderHeight) / 2;
 
+            const cx = canvas.width / 2;
+            const cy = yOffset + (renderHeight * 0.445); 
+
             ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(waveRotation);
             if (targetHueShift !== 0) {
                 ctx.filter = `hue-rotate(${targetHueShift}deg) saturate(1.2)`;
             }
-            ctx.drawImage(jugnuBase, xOffset, yOffset, renderWidth, renderHeight);
+            ctx.drawImage(jugnuBase, -renderWidth / 2, -renderHeight * 0.445, renderWidth, renderHeight);
             ctx.restore();
 
-            const cx = canvas.width / 2;
-            const cy = yOffset + (renderHeight * 0.445) + waveOffsetY; 
-
-            drawExpressionLayer(ctx, cx, cy, currentExpression);
+            const activeFaceY = cy + waveOffsetY;
+            drawExpressionLayer(ctx, cx, activeFaceY, currentExpression);
 
             animationFrameId = requestAnimationFrame(render);
         }
@@ -286,21 +382,18 @@
             ctx.lineJoin = 'round';
             ctx.fillStyle = '#ffffff';
 
-            const eyeY = cy - 10;      // Lifted slightly more for spacing
-            const mouthY = cy + 14;    // Comfortably lowered baseline for the mouth
+            const eyeY = cy - 10;      
+            const mouthY = cy + 14;    
             const eyeOffset = 42; 
             const mouthWidth = 14; 
 
-            // --- 1. DYNAMIC EYE SELECTION ENGINE ---
             if (type === 'classic') {
-                // Left caret eye (^)
                 ctx.beginPath();
                 ctx.moveTo(cx - eyeOffset - 12, eyeY + 6);
                 ctx.lineTo(cx - eyeOffset, eyeY - 6);
                 ctx.lineTo(cx - eyeOffset + 12, eyeY + 6);
                 ctx.stroke();
 
-                // Right caret eye (^)
                 ctx.beginPath();
                 ctx.moveTo(cx + eyeOffset - 12, eyeY + 6);
                 ctx.lineTo(cx + eyeOffset, eyeY - 6);
@@ -308,7 +401,6 @@
                 ctx.stroke();
             } 
             else if (type === 'happy') {
-                // Left heart eye (♥) 
                 ctx.save();
                 ctx.translate(cx - eyeOffset, eyeY);
                 ctx.scale(0.85, 0.85); 
@@ -321,7 +413,6 @@
                 ctx.fill();
                 ctx.restore();
                 
-                // Right heart eye (♥)
                 ctx.save();
                 ctx.translate(cx + eyeOffset, eyeY);
                 ctx.scale(0.85, 0.85);
@@ -335,12 +426,10 @@
                 ctx.restore();
             } 
             else if (type === 'wink') {
-                // Left capital "O" circle eye
                 ctx.beginPath();
                 ctx.arc(cx - eyeOffset, eyeY, 11, 0, Math.PI * 2);
                 ctx.stroke();
 
-                // Right less-than "<" wink eye
                 ctx.beginPath();
                 ctx.moveTo(cx + eyeOffset + 10, eyeY - 10);
                 ctx.lineTo(cx + eyeOffset - 4, eyeY);
@@ -348,37 +437,30 @@
                 ctx.stroke();
             } 
             else if (type === 'shocked') {
-                // Left capital "O" circle eye
                 ctx.beginPath();
                 ctx.arc(cx - eyeOffset, eyeY, 11, 0, Math.PI * 2);
                 ctx.stroke();
 
-                // Right capital "O" circle eye
                 ctx.beginPath();
                 ctx.arc(cx + eyeOffset, eyeY, 11, 0, Math.PI * 2);
                 ctx.stroke();
             }
 
-            // --- 2. UPGRADED DYNAMIC CURVED MOUTH ENGINE ---
-            ctx.fillStyle = 'transparent'; // Keep inside of mouth stroke hollow
+            ctx.fillStyle = 'transparent'; 
             
             if (type === 'classic' || type === 'happy') {
-                // Happy / Classic Smile Curve
                 ctx.beginPath();
                 ctx.moveTo(cx - mouthWidth, mouthY);
-                // Control point pulls downward to create a smile dip
                 ctx.quadraticCurveTo(cx, mouthY + 10, cx + mouthWidth, mouthY);
                 ctx.stroke();
             } 
             else if (type === 'wink') {
-                // Playful / Smirk Side Wave Curve
                 ctx.beginPath();
                 ctx.moveTo(cx - mouthWidth, mouthY + 4);
                 ctx.bezierCurveTo(cx - mouthWidth/2, mouthY + 10, cx + mouthWidth/2, mouthY - 4, cx + mouthWidth, mouthY + 2);
                 ctx.stroke();
             } 
             else if (type === 'shocked') {
-                // Shocked Wide Open Circle Mouth (Instead of just a flat line)
                 ctx.beginPath();
                 ctx.arc(cx, mouthY + 4, 8, 0, Math.PI * 2);
                 ctx.stroke();
@@ -397,23 +479,74 @@
             updateHueFromHex(colorPicker.value);
         }
 
+        function generateStaticFrame() {
+            cancelAnimationFrame(animationFrameId);
+            let temporaryWaveOffset = waveOffsetY;
+            let temporaryRotationOffset = waveRotation;
+            waveOffsetY = 0;
+            waveRotation = 0;
+            render(0); 
+            
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            waveOffsetY = temporaryWaveOffset;
+            waveRotation = temporaryRotationOffset;
+            animationFrameId = requestAnimationFrame(render);
+            
+            return dataUrl;
+        }
+
         function downloadSticker() {
             try {
-                cancelAnimationFrame(animationFrameId);
-                
-                let temporaryWaveOffset = waveOffsetY;
-                waveOffsetY = 0;
-                render(0); 
-
+                const imgData = generateStaticFrame();
                 const link = document.createElement('a');
                 link.download = `jugnu-${currentExpression}-sticker.png`;
-                link.href = canvas.toDataURL('image/png');
+                link.href = imgData;
                 link.click();
-
-                waveOffsetY = temporaryWaveOffset;
-                animationFrameId = requestAnimationFrame(render);
             } catch(e) {
                 alert("Security Restriction: Open via a local server (like Live Server) or deploy online to download.");
+            }
+        }
+
+        async function shareSticker() {
+            try {
+                const imgDataUrl = generateStaticFrame();
+                const blob = await (await fetch(imgDataUrl)).blob();
+                const file = new File([blob], `jugnu-${currentExpression}.png`, { type: blob.type });
+
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: 'My Custom Jugnu Sticker!',
+                        text: 'Check out my personalized spatial companion for JugnuXR at the XRCC 2026 hackathon! 🚀'
+                    });
+                } else {
+                    await navigator.clipboard.writeText(window.location.href);
+                    alert("App link copied to clipboard! Share it with your friends to promote JugnuXR! 📢");
+                }
+            } catch (err) {
+                console.error("Share failed:", err);
+            }
+        }
+
+        let qrGenerated = false;
+        function toggleQRModal(show) {
+            const modal = document.getElementById('qrModal');
+            if (show) {
+                modal.classList.add('show');
+                if (!qrGenerated) {
+                    new QRCode(document.getElementById("qrcode"), {
+                        text: window.location.href, 
+                        width: 180,
+                        height: 180,
+                        colorDark : "#0f0f11",
+                        colorLight : "#ffffff",
+                        correctLevel : QRCode.CorrectLevel.H
+                    });
+                    qrGenerated = true;
+                }
+            } else {
+                modal.classList.remove('show');
             }
         }
 

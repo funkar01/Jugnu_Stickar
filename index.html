@@ -384,6 +384,7 @@
         <div class="ar-ui">
             <div class="cheek-selector">
                 <button id="leftCheekBtn" class="cheek-btn active">Left Cheek</button>
+                <button id="noseBtn" class="cheek-btn">Nose</button>
                 <button id="rightCheekBtn" class="cheek-btn">Right Cheek</button>
             </div>
             <button id="exitArBtn" class="btn" style="background: rgba(220, 53, 69, 0.9); box-shadow: none;">
@@ -606,6 +607,7 @@
 
         // Listen for internal side toggles inside standard namespace layout boundaries
         document.getElementById('leftCheekBtn').addEventListener('click', () => { if(window.switchARAnchorSide) window.switchARAnchorSide('left'); });
+        document.getElementById('noseBtn').addEventListener('click', () => { if(window.switchARAnchorSide) window.switchARAnchorSide('nose'); });
         document.getElementById('rightCheekBtn').addEventListener('click', () => { if(window.switchARAnchorSide) window.switchARAnchorSide('right'); });
         document.getElementById('exitArBtn').addEventListener('click', () => { if(window.terminateARViewport) window.terminateARViewport(); });
 
@@ -627,6 +629,7 @@
 
         let mindarThree = null;
         let leftAnchor = null;
+        let noseAnchor = null;
         let rightAnchor = null;
         let anchorMesh = null;
 
@@ -648,10 +651,40 @@
             anchorMesh.position.set(0, 0, 0.005);
 
             leftAnchor = mindarThree.addAnchor(234);
+            noseAnchor = mindarThree.addAnchor(4);
             rightAnchor = mindarThree.addAnchor(454);
+
+            // Add visual debug elements
+            try {
+                // 1. Face mesh wireframe for mapping visualization
+                const faceMesh = mindarThree.addFaceMesh();
+                if (faceMesh && faceMesh.material) {
+                    faceMesh.material.wireframe = true;
+                    faceMesh.material.transparent = true;
+                    faceMesh.material.opacity = 0.4;
+                    faceMesh.material.color.setHex(0xff6b35); // matches --accent-color
+                    scene.add(faceMesh);
+                }
+
+                // 2. Anchor point debug spheres
+                const debugGeometry = new THREE.SphereGeometry(0.015, 8, 8);
+                
+                const leftDebugSphere = new THREE.Mesh(debugGeometry, new THREE.MeshBasicMaterial({ color: 0x00ff00 })); // Green
+                leftAnchor.group.add(leftDebugSphere);
+
+                const noseDebugSphere = new THREE.Mesh(debugGeometry, new THREE.MeshBasicMaterial({ color: 0xff0000 })); // Red
+                noseAnchor.group.add(noseDebugSphere);
+
+                const rightDebugSphere = new THREE.Mesh(debugGeometry, new THREE.MeshBasicMaterial({ color: 0x00ff00 })); // Green
+                rightAnchor.group.add(rightDebugSphere);
+            } catch (debugErr) {
+                console.warn("Could not load visual debug overlays:", debugErr);
+            }
 
             if (initialSide === 'left') {
                 leftAnchor.group.add(anchorMesh);
+            } else if (initialSide === 'nose') {
+                noseAnchor.group.add(anchorMesh);
             } else {
                 rightAnchor.group.add(anchorMesh);
             }
@@ -672,14 +705,19 @@
 
         window.switchARAnchorSide = function(side) {
             document.querySelectorAll('.cheek-btn').forEach(btn => btn.classList.remove('active'));
-            document.getElementById(`${side}CheekBtn`).classList.add('active');
+            const activeBtn = document.getElementById(`${side}CheekBtn`) || document.getElementById('noseBtn');
+            if (activeBtn) activeBtn.classList.add('active');
             
-            if (leftAnchor && rightAnchor && anchorMesh) {
+            if (leftAnchor && noseAnchor && rightAnchor && anchorMesh) {
+                leftAnchor.group.remove(anchorMesh);
+                noseAnchor.group.remove(anchorMesh);
+                rightAnchor.group.remove(anchorMesh);
+
                 if (side === 'left') {
-                    rightAnchor.group.remove(anchorMesh);
                     leftAnchor.group.add(anchorMesh);
+                } else if (side === 'nose') {
+                    noseAnchor.group.add(anchorMesh);
                 } else {
-                    leftAnchor.group.remove(anchorMesh);
                     rightAnchor.group.add(anchorMesh);
                 }
             }
@@ -697,6 +735,7 @@
             }
             window.arTextureRef = null;
             leftAnchor = null;
+            noseAnchor = null;
             rightAnchor = null;
             anchorMesh = null;
             arContainer.style.display = 'none';

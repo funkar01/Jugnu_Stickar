@@ -1,6 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Global Debugging & Error Catching for Mobile/PC -->
+    <script>
+        window.addEventListener('error', function(event) {
+            if (event.target && (event.target.tagName === 'SCRIPT' || event.target.tagName === 'LINK')) {
+                alert("Resource Load Error:\nFailed to load: " + (event.target.src || event.target.href) + "\n\nThis could be due to a network connection issue, or CORS block by your browser.");
+            } else {
+                alert("Runtime Error:\n" + event.message + "\nAt: " + event.filename + ":" + event.lineno);
+            }
+        }, true);
+        window.addEventListener('unhandledrejection', function(event) {
+            alert("Unhandled Promise Rejection:\n" + event.reason);
+        });
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jugnu Sticker Creator</title>
@@ -13,6 +26,7 @@
     {
         "imports": {
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
             "mindar-face-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-face-three.prod.js"
         }
     }
@@ -212,6 +226,11 @@
             background: #000;
         }
 
+        /* Spinner animation for loading state */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         .ar-ui {
             position: absolute;
             bottom: 40px;
@@ -358,6 +377,10 @@
     </div>
 
     <div id="ar-container">
+        <div id="ar-loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 1.2rem; font-weight: bold; text-align: center; z-index: 55; font-family: sans-serif;">
+            <div style="border: 4px solid rgba(255,255,255,0.1); border-left-color: #ff6b35; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px auto;"></div>
+            Loading AR Face Camera...
+        </div>
         <div class="ar-ui">
             <div class="cheek-selector">
                 <button id="leftCheekBtn" class="cheek-btn active">Left Cheek</button>
@@ -565,7 +588,20 @@
                 alert("Security Restriction: To launch the live AR tracking camera on your PC or mobile phone, you must open this directory using a local development server or host it online securely over HTTPS (like GitHub Pages).");
                 return;
             }
-            if (window.startAsynchronousAR) window.startAsynchronousAR(currentCheek);
+
+            // Check for Secure Context (HTTPS or localhost) required by WebAR/Camera API
+            if (!window.isSecureContext) {
+                alert("Security Restriction: AR camera access requires a Secure Context (HTTPS or localhost).\n\nYou are accessing this page via: " + window.location.href + "\n\nPlease host this page securely (e.g., using GitHub Pages over HTTPS, or local port forwarding/ngrok) to enable camera access.");
+                return;
+            }
+
+            if (window.startAsynchronousAR) {
+                window.startAsynchronousAR(currentCheek).catch(err => {
+                    alert("AR Initialization Error:\n" + err.message + "\n\nPlease verify that your device has a camera, camera permissions are granted, and you are accessing a secure URL.");
+                });
+            } else {
+                alert("AR modules are not initialized yet.\n\nPossible reasons:\n- The browser does not support ES modules or import maps.\n- The external 3D libraries (Three.js/MindAR) failed to download.\n- A JavaScript error occurred during load.\n\nPlease reload or check the developer console.");
+            }
         };
 
         // Listen for internal side toggles inside standard namespace layout boundaries
@@ -624,10 +660,13 @@
             
             try {
                 await mindarThree.start();
+                const loadingEl = document.getElementById('ar-loading');
+                if (loadingEl) loadingEl.style.display = 'none';
                 renderer.setAnimationLoop(() => { renderer.render(scene, camera); });
             } catch (err) {
                 console.error(err);
                 window.terminateARViewport();
+                throw err;
             }
         };
 
@@ -649,6 +688,8 @@
         window.terminateARViewport = function() {
             window.setArStateActive(false);
             const arContainer = document.getElementById('ar-container');
+            const loadingEl = document.getElementById('ar-loading');
+            if (loadingEl) loadingEl.style.display = 'block';
             if (mindarThree) {
                 mindarThree.stop();
                 const elSelectors = arContainer.querySelectorAll('video, canvas');

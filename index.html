@@ -645,10 +645,10 @@
             const material = new THREE.MeshBasicMaterial({ map: window.arTextureRef, transparent: true });
             const geometry = new THREE.PlaneGeometry(0.35, 0.35);
             anchorMesh = new THREE.Mesh(geometry, material);
-            anchorMesh.position.set(0, 0, 0.02);
+            anchorMesh.position.set(0, 0, 0.005);
 
-            leftAnchor = mindarThree.addAnchor(433);
-            rightAnchor = mindarThree.addAnchor(213);
+            leftAnchor = mindarThree.addAnchor(234);
+            rightAnchor = mindarThree.addAnchor(454);
 
             if (initialSide === 'left') {
                 leftAnchor.group.add(anchorMesh);
@@ -701,7 +701,7 @@
             anchorMesh = null;
             arContainer.style.display = 'none';
             const mainUi = document.getElementById('main-ui');
-            mainUi.style.display = 'flex';
+            mainUi.style.display = 'block';
             setTimeout(() => mainUi.style.opacity = '1', 50);
         };
     </script>

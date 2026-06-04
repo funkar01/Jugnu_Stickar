@@ -385,11 +385,16 @@
             <div class="cheek-selector">
                 <button id="tattooBtn" class="cheek-btn active">Cheek Tattoo</button>
                 <button id="orbitBtn" class="cheek-btn">Face Orbit</button>
-                <button id="shoulderBtn" class="cheek-btn">Shoulder Pet</button>
+                <button id="shoulderBtn" class="cheek-btn">Jugnu Badge</button>
             </div>
-            <button id="exitArBtn" class="btn" style="background: rgba(220, 53, 69, 0.9); box-shadow: none;">
-                ❌ Exit AR Face Mode
-            </button>
+            <div style="display: flex; gap: 12px; width: 100%;">
+                <button id="captureBtn" class="btn" style="background: #28a745; box-shadow: none; flex: 1;">
+                    📸 Capture Selfie
+                </button>
+                <button id="exitArBtn" class="btn" style="background: rgba(220, 53, 69, 0.9); box-shadow: none; flex: 1;">
+                    ❌ Exit AR Mode
+                </button>
+            </div>
         </div>
     </div>
 
@@ -450,8 +455,8 @@
         jugnuBase.src = './Jugnu_base.png';
 
         function render(timestamp = 0) {
-            waveOffsetY = Math.sin(timestamp / 300) * 5;
-            waveRotation = Math.sin(timestamp / 600) * 0.04;
+            // Jugnu body waves rotate continuously
+            waveRotation = timestamp * 0.0008;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             if (!jugnuBase.complete || jugnuBase.naturalWidth === 0) return;
@@ -478,14 +483,20 @@
             ctx.save();
             ctx.translate(cx, cy);
             ctx.rotate(waveRotation);
-            if (targetHueShift !== 0) {
-                ctx.filter = `hue-rotate(${targetHueShift}deg) saturate(1.2)`;
-            }
+            // Boost saturation and contrast to make Jugnu vibrant, energetic, and attractive
+            ctx.filter = `hue-rotate(${targetHueShift}deg) saturate(1.85) contrast(1.2)`;
+            
+            // Volumetric glowing shades of the same custom color
+            ctx.shadowColor = colorPicker.value || '#ff6b35';
+            ctx.shadowBlur = 30;
+            
             ctx.drawImage(jugnuBase, -renderWidth / 2, -renderHeight * 0.445, renderWidth, renderHeight);
             ctx.restore();
 
-            const activeFaceY = cy + waveOffsetY;
-            drawExpressionLayer(ctx, cx, activeFaceY, currentExpression);
+            // Make the facial expression float independently inside the rotating body to look alive
+            const floatX = Math.cos(timestamp / 350) * 8;
+            const floatY = Math.sin(timestamp / 250) * 10;
+            drawExpressionLayer(ctx, cx + floatX, cy + floatY, currentExpression);
 
             // Dynamically dispatch tracking canvas map pipeline updates if requested by external modules
             if (arActive && window.arTextureRef) {
@@ -609,11 +620,69 @@
         document.getElementById('tattooBtn').addEventListener('click', () => { if(window.switchARMode) window.switchARMode('tattoo'); });
         document.getElementById('orbitBtn').addEventListener('click', () => { if(window.switchARMode) window.switchARMode('orbit'); });
         document.getElementById('shoulderBtn').addEventListener('click', () => { if(window.switchARMode) window.switchARMode('shoulder'); });
+        document.getElementById('captureBtn').addEventListener('click', () => { window.shouldTakeSelfie = true; });
         document.getElementById('exitArBtn').addEventListener('click', () => { if(window.terminateARViewport) window.terminateARViewport(); });
 
         // Expose global execution state toggles safely
         window.setArStateActive = function(isActive) { arActive = isActive; };
         window.getCanvasRef = function() { return canvas; };
+
+        window.shouldTakeSelfie = false;
+        
+        window.executeSelfieCapture = function(canvas3D) {
+            const arContainer = document.getElementById('ar-container');
+            const video = arContainer.querySelector('video');
+            if (!video || !canvas3D) return;
+
+            const compositeCanvas = document.createElement('canvas');
+            const width = canvas3D.width;
+            const height = canvas3D.height;
+            compositeCanvas.width = width;
+            compositeCanvas.height = height;
+            const ctx = compositeCanvas.getContext('2d');
+
+            // Mirror horizontally so the saved photo matches the screen mirror view exactly
+            ctx.translate(width, 0);
+            ctx.scale(-1, 1);
+
+            // 1. Draw the video element (object-fit: cover sizing)
+            const videoWidth = video.videoWidth;
+            const videoHeight = video.videoHeight;
+            if (videoWidth && videoHeight) {
+                const videoAspect = videoWidth / videoHeight;
+                const canvasAspect = width / height;
+                let drawWidth, drawHeight, offsetX, offsetY;
+                if (videoAspect > canvasAspect) {
+                    drawHeight = height;
+                    drawWidth = height * videoAspect;
+                    offsetX = (width - drawWidth) / 2;
+                    offsetY = 0;
+                } else {
+                    drawWidth = width;
+                    drawHeight = width / videoAspect;
+                    offsetX = 0;
+                    offsetY = (height - drawHeight) / 2;
+                }
+                ctx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
+            } else {
+                ctx.drawImage(video, 0, 0, width, height);
+            }
+
+            // 2. Draw the WebGL canvas (3D model overlay)
+            ctx.drawImage(canvas3D, 0, 0, width, height);
+
+            // 3. Trigger download
+            try {
+                const dataUrl = compositeCanvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.download = `jugnu-selfie-${Date.now()}.png`;
+                link.href = dataUrl;
+                link.click();
+            } catch (err) {
+                console.error(err);
+                alert("Error exporting selfie: " + err.message);
+            }
+        };
 
         jugnuBase.onload = function() { render(); };
         jugnuBase.onerror = function() {
@@ -704,6 +773,11 @@
                     }
                     
                     renderer.render(scene, camera);
+
+                    if (window.shouldTakeSelfie) {
+                        window.executeSelfieCapture(renderer.domElement);
+                        window.shouldTakeSelfie = false;
+                    }
                 });
             } catch (err) {
                 console.error(err);
@@ -745,8 +819,8 @@
                     // Dynamically positioned in rendering loop
                 } else if (mode === 'shoulder') {
                     chinAnchor.group.add(anchorMesh);
-                    anchorMesh.position.set(-0.32, -0.42, -0.10); // Offset to screen-left shoulder
-                    anchorMesh.scale.setScalar(1.25); // Slightly larger
+                    anchorMesh.position.set(-0.15, -0.25, -0.05); // Pinned on the screen-left chest (lapel/badge position)
+                    anchorMesh.scale.setScalar(0.65); // Badge-sized scale
                 }
             }
         };

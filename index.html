@@ -586,72 +586,83 @@
 
     <!-- ISOLATED INTERPOLATION STREAM MODULE: Dynamically imported. Stays sleeping and doesn't interfere locally until online secure parameters are met -->
     <script type="module">
-        if (window.location.protocol !== 'file:') {
-            import * as THREE from 'three';
-            import { MindARThree } from 'mindar-face-three';
+        import * as THREE from 'three';
+        import { MindARThree } from 'mindar-face-three';
 
-            let mindarThree = null;
-            let anchorMesh = null;
+        let mindarThree = null;
+        let leftAnchor = null;
+        let rightAnchor = null;
+        let anchorMesh = null;
 
-            window.startAsynchronousAR = async function(initialSide) {
-                const mainUi = document.getElementById('main-ui');
-                const arContainer = document.getElementById('ar-container');
-                
-                mainUi.style.opacity = '0';
-                setTimeout(() => mainUi.style.display = 'none', 300);
-                arContainer.style.display = 'block';
+        window.startAsynchronousAR = async function(initialSide) {
+            const mainUi = document.getElementById('main-ui');
+            const arContainer = document.getElementById('ar-container');
+            
+            mainUi.style.opacity = '0';
+            setTimeout(() => mainUi.style.display = 'none', 300);
+            arContainer.style.display = 'block';
 
-                mindarThree = new MindARThree({ container: arContainer });
-                const { renderer, scene, camera } = mindarThree;
-                
-                window.arTextureRef = new THREE.CanvasTexture(window.getCanvasRef());
-                const material = new THREE.MeshBasicMaterial({ map: window.arTextureRef, transparent: true });
-                const geometry = new THREE.PlaneGeometry(0.35, 0.35);
-                anchorMesh = new THREE.Mesh(geometry, material);
-                anchorMesh.position.set(0, 0, 0.02);
+            mindarThree = new MindARThree({ container: arContainer });
+            const { renderer, scene, camera } = mindarThree;
+            
+            window.arTextureRef = new THREE.CanvasTexture(window.getCanvasRef());
+            const material = new THREE.MeshBasicMaterial({ map: window.arTextureRef, transparent: true });
+            const geometry = new THREE.PlaneGeometry(0.35, 0.35);
+            anchorMesh = new THREE.Mesh(geometry, material);
+            anchorMesh.position.set(0, 0, 0.02);
 
-                const anchorIndex = initialSide === 'left' ? 433 : 213;
-                mindarThree.addAnchor(anchorIndex).group.add(anchorMesh);
+            leftAnchor = mindarThree.addAnchor(433);
+            rightAnchor = mindarThree.addAnchor(213);
 
-                window.setArStateActive(true);
-                
-                try {
-                    await mindarThree.start();
-                    renderer.setAnimationLoop(() => { renderer.render(scene, camera); });
-                } catch (err) {
-                    console.error(err);
-                    window.terminateARViewport();
+            if (initialSide === 'left') {
+                leftAnchor.group.add(anchorMesh);
+            } else {
+                rightAnchor.group.add(anchorMesh);
+            }
+
+            window.setArStateActive(true);
+            
+            try {
+                await mindarThree.start();
+                renderer.setAnimationLoop(() => { renderer.render(scene, camera); });
+            } catch (err) {
+                console.error(err);
+                window.terminateARViewport();
+            }
+        };
+
+        window.switchARAnchorSide = function(side) {
+            document.querySelectorAll('.cheek-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`${side}CheekBtn`).classList.add('active');
+            
+            if (leftAnchor && rightAnchor && anchorMesh) {
+                if (side === 'left') {
+                    rightAnchor.group.remove(anchorMesh);
+                    leftAnchor.group.add(anchorMesh);
+                } else {
+                    leftAnchor.group.remove(anchorMesh);
+                    rightAnchor.group.add(anchorMesh);
                 }
-            };
+            }
+        };
 
-            window.switchARAnchorSide = function(side) {
-                document.querySelectorAll('.cheek-btn').forEach(btn => btn.classList.remove('active'));
-                document.getElementById(`${side}CheekBtn`).classList.add('active');
-                
-                if (mindarThree && anchorMesh) {
-                    const oldIndex = side === 'left' ? 213 : 433;
-                    const newIndex = side === 'left' ? 433 : 213;
-                    
-                    mindarThree.anchors[oldIndex].group.remove(anchorMesh);
-                    mindarThree.addAnchor(newIndex).group.add(anchorMesh);
-                }
-            };
-
-            window.terminateARViewport = function() {
-                window.setArStateActive(false);
-                const arContainer = document.getElementById('ar-container');
-                if (mindarThree) {
-                    mindarThree.stop();
-                    const elSelectors = arContainer.querySelectorAll('video, canvas');
-                    elSelectors.forEach(el => el.remove());
-                }
-                window.arTextureRef = null;
-                arContainer.style.display = 'none';
-                const mainUi = document.getElementById('main-ui');
-                mainUi.style.display = 'flex';
-                setTimeout(() => mainUi.style.opacity = '1', 50);
-            };
-        }
+        window.terminateARViewport = function() {
+            window.setArStateActive(false);
+            const arContainer = document.getElementById('ar-container');
+            if (mindarThree) {
+                mindarThree.stop();
+                const elSelectors = arContainer.querySelectorAll('video, canvas');
+                elSelectors.forEach(el => el.remove());
+            }
+            window.arTextureRef = null;
+            leftAnchor = null;
+            rightAnchor = null;
+            anchorMesh = null;
+            arContainer.style.display = 'none';
+            const mainUi = document.getElementById('main-ui');
+            mainUi.style.display = 'flex';
+            setTimeout(() => mainUi.style.opacity = '1', 50);
+        };
     </script>
 </body>
 </html>

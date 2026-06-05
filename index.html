@@ -634,42 +634,43 @@
             const video = arContainer.querySelector('video');
             if (!video || !canvas3D) return;
 
+            // Get viewport display container dimensions
+            const containerWidth = arContainer.clientWidth;
+            const containerHeight = arContainer.clientHeight;
+
+            // Get video's CSS dimensions to calculate the correct scale and offsets
+            const videoStyleWidth = parseFloat(video.style.width) || containerWidth;
+            const videoStyleHeight = parseFloat(video.style.height) || containerHeight;
+            const videoStyleLeft = parseFloat(video.style.left) || 0;
+            const videoStyleTop = parseFloat(video.style.top) || 0;
+
+            // Calculate the scale factor between the CSS display size and raw video dimensions
+            const scale = video.videoWidth / videoStyleWidth;
+
+            // Compute the cropped region dimensions in raw pixel coordinates
+            const cropX = -videoStyleLeft * scale;
+            const cropY = -videoStyleTop * scale;
+            const cropWidth = containerWidth * scale;
+            const cropHeight = containerHeight * scale;
+
+            // Create a high-resolution composite canvas matching the container's aspect ratio
             const compositeCanvas = document.createElement('canvas');
-            const width = canvas3D.width;
-            const height = canvas3D.height;
-            compositeCanvas.width = width;
-            compositeCanvas.height = height;
+            compositeCanvas.width = cropWidth;
+            compositeCanvas.height = cropHeight;
             const ctx = compositeCanvas.getContext('2d');
 
-            // Mirror horizontally so the saved photo matches the screen mirror view exactly
-            ctx.translate(width, 0);
+            // 1. Draw the video element (Webcam background)
+            // The raw camera feed is unmirrored, so we apply horizontal flip to mirror it.
+            ctx.save();
+            ctx.translate(cropWidth, 0);
             ctx.scale(-1, 1);
+            ctx.drawImage(video, -cropX, -cropY, video.videoWidth, video.videoHeight);
+            ctx.restore();
 
-            // 1. Draw the video element (object-fit: cover sizing)
-            const videoWidth = video.videoWidth;
-            const videoHeight = video.videoHeight;
-            if (videoWidth && videoHeight) {
-                const videoAspect = videoWidth / videoHeight;
-                const canvasAspect = width / height;
-                let drawWidth, drawHeight, offsetX, offsetY;
-                if (videoAspect > canvasAspect) {
-                    drawHeight = height;
-                    drawWidth = height * videoAspect;
-                    offsetX = (width - drawWidth) / 2;
-                    offsetY = 0;
-                } else {
-                    drawWidth = width;
-                    drawHeight = width / videoAspect;
-                    offsetX = 0;
-                    offsetY = (height - drawHeight) / 2;
-                }
-                ctx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
-            } else {
-                ctx.drawImage(video, 0, 0, width, height);
-            }
-
-            // 2. Draw the WebGL canvas (3D model overlay)
-            ctx.drawImage(canvas3D, 0, 0, width, height);
+            // 2. Draw the WebGL canvas (3D model overlay containing Jugnu)
+            // The WebGL canvas is already rendered mirrored internally by the MindAR tracking solver.
+            // Therefore, we draw it unmirrored (without scale(-1, 1)) so it is not double-flipped.
+            ctx.drawImage(canvas3D, -cropX, -cropY, video.videoWidth, video.videoHeight);
 
             // 3. Trigger download
             try {

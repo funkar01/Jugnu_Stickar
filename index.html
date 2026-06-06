@@ -339,7 +339,7 @@
         <div class="subtitle">Jugnu Spatial Companion</div>
 
         <div class="canvas-container">
-            <canvas id="stickerCanvas" width="600" height="600"></canvas>
+            <canvas id="stickerCanvas" width="1024" height="1024"></canvas>
         </div>
 
         <div class="section-title">Customize Companion</div>
@@ -412,6 +412,107 @@
         const canvas = document.getElementById('stickerCanvas');
         const ctx = canvas.getContext('2d');
         const colorPicker = document.getElementById('jugnuColor');
+
+        // Synthesize camera shutter sound programmatically using Web Audio API
+        function playCameraSound() {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Noise buffer for the mechanical click
+                const bufferSize = audioCtx.sampleRate * 0.12; // ~120ms
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+                
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.value = 1200;
+                filter.Q.value = 3;
+                
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(0.7, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                noise.start();
+                
+                // Crisp high-frequency transient click
+                const osc = audioCtx.createOscillator();
+                const oscGain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(1500, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.04);
+                
+                oscGain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+                oscGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.04);
+                
+                osc.connect(oscGain);
+                oscGain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.04);
+            } catch (e) {
+                console.warn("Web Audio API failed to play sound: User interaction required or context blocked.", e);
+            }
+        }
+
+        // Show a premium glassmorphic toast notification
+        function showToast(message) {
+            const existingToast = document.getElementById('camera-toast');
+            if (existingToast) existingToast.remove();
+
+            const toast = document.createElement('div');
+            toast.id = 'camera-toast';
+            toast.innerHTML = `
+                <span style="font-size: 1.2rem; margin-right: 10px; display: flex; align-items: center;">📸</span>
+                <span>${message}</span>
+            `;
+            
+            Object.assign(toast.style, {
+                position: 'fixed',
+                bottom: '120px',
+                left: '50%',
+                transform: 'translateX(-50%) translateY(20px)',
+                backgroundColor: 'rgba(24, 24, 28, 0.85)',
+                backdropFilter: 'blur(12px)',
+                webkitBackdropFilter: 'blur(12px)',
+                border: '1.5px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '16px',
+                color: '#ffffff',
+                padding: '14px 28px',
+                fontSize: '0.9rem',
+                fontWeight: '600',
+                zIndex: '9999',
+                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.1)',
+                transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                opacity: '0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+            });
+
+            document.body.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.style.opacity = '1';
+                toast.style.transform = 'translateX(-50%) translateY(0)';
+            });
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(-50%) translateY(-20px)';
+                setTimeout(() => toast.remove(), 400);
+            }, 2500);
+        }
         
         let currentExpression = 'classic';
         let targetHueShift = 0;
@@ -620,7 +721,10 @@
         document.getElementById('tattooBtn').addEventListener('click', () => { if(window.switchARMode) window.switchARMode('tattoo'); });
         document.getElementById('orbitBtn').addEventListener('click', () => { if(window.switchARMode) window.switchARMode('orbit'); });
         document.getElementById('shoulderBtn').addEventListener('click', () => { if(window.switchARMode) window.switchARMode('shoulder'); });
-        document.getElementById('captureBtn').addEventListener('click', () => { window.shouldTakeSelfie = true; });
+        document.getElementById('captureBtn').addEventListener('click', () => { 
+            playCameraSound();
+            window.shouldTakeSelfie = true; 
+        });
         document.getElementById('exitArBtn').addEventListener('click', () => { if(window.terminateARViewport) window.terminateARViewport(); });
 
         // Expose global execution state toggles safely
@@ -679,6 +783,9 @@
                 link.download = `jugnu-selfie-${Date.now()}.png`;
                 link.href = dataUrl;
                 link.click();
+
+                // Show user notification that photo is saved
+                showToast("Photo saved to gallery!");
             } catch (err) {
                 console.error(err);
                 alert("Error exporting selfie: " + err.message);
@@ -718,7 +825,24 @@
             mindarThree = new MindARThree({ container: arContainer });
             const { renderer, scene, camera } = mindarThree;
             
+            // Override renderer.setSize to increase drawing resolution (removes pixelation)
+            const originalSetSize = renderer.setSize.bind(renderer);
+            renderer.setSize = function(width, height, updateStyle) {
+                const scaleFactor = Math.max(window.devicePixelRatio, 2);
+                originalSetSize(width * scaleFactor, height * scaleFactor, updateStyle);
+            };
+
             window.arTextureRef = new THREE.CanvasTexture(window.getCanvasRef());
+            
+            // Configure high-quality texture filtering & anisotropic filtering to ensure sharpness
+            window.arTextureRef.minFilter = THREE.LinearMipmapLinearFilter;
+            window.arTextureRef.magFilter = THREE.LinearFilter;
+            window.arTextureRef.generateMipmaps = true;
+            if (renderer.capabilities && typeof renderer.capabilities.getMaxAnisotropy === 'function') {
+                const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+                window.arTextureRef.anisotropy = maxAnisotropy;
+            }
+            
             material = new THREE.MeshBasicMaterial({ map: window.arTextureRef, transparent: true });
             const geometry = new THREE.PlaneGeometry(0.35, 0.35);
             anchorMesh = new THREE.Mesh(geometry, material);
@@ -727,8 +851,9 @@
             randomCheek = Math.random() < 0.5 ? 'left' : 'right';
             currentArMode = 'tattoo';
 
-            leftAnchor = mindarThree.addAnchor(234);
-            rightAnchor = mindarThree.addAnchor(454);
+            // Use landmarks 123 (left cheek) and 352 (right cheek) for center cheek placement
+            leftAnchor = mindarThree.addAnchor(123);
+            rightAnchor = mindarThree.addAnchor(352);
             noseAnchor = mindarThree.addAnchor(4);
             chinAnchor = mindarThree.addAnchor(152);
 

@@ -418,46 +418,41 @@
             try {
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 
-                // Noise buffer for the mechanical click
-                const bufferSize = audioCtx.sampleRate * 0.12; // ~120ms
-                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    data[i] = Math.random() * 2 - 1;
-                }
+                // 1. Sci-Fi Frequency Sweep (Rise and Fall)
+                const osc1 = audioCtx.createOscillator();
+                const gain1 = audioCtx.createGain();
+                osc1.type = 'sine';
                 
-                const noise = audioCtx.createBufferSource();
-                noise.buffer = buffer;
+                // Sweep frequency quickly from 600Hz up to 2200Hz, then down to 300Hz
+                osc1.frequency.setValueAtTime(600, audioCtx.currentTime);
+                osc1.frequency.exponentialRampToValueAtTime(2200, audioCtx.currentTime + 0.08);
+                osc1.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.25);
                 
-                const filter = audioCtx.createBiquadFilter();
-                filter.type = 'bandpass';
-                filter.frequency.value = 1200;
-                filter.Q.value = 3;
+                gain1.gain.setValueAtTime(0.4, audioCtx.currentTime);
+                gain1.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
                 
-                const gain = audioCtx.createGain();
-                gain.gain.setValueAtTime(0.7, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc1.connect(gain1);
+                gain1.connect(audioCtx.destination);
                 
-                noise.connect(filter);
-                filter.connect(gain);
-                gain.connect(audioCtx.destination);
+                // 2. High-frequency "magical sparkle" chime
+                const osc2 = audioCtx.createOscillator();
+                const gain2 = audioCtx.createGain();
+                osc2.type = 'triangle';
                 
-                noise.start();
+                osc2.frequency.setValueAtTime(2500, audioCtx.currentTime);
+                osc2.frequency.setValueAtTime(3200, audioCtx.currentTime + 0.05);
                 
-                // Crisp high-frequency transient click
-                const osc = audioCtx.createOscillator();
-                const oscGain = audioCtx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(1500, audioCtx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.04);
+                gain2.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
                 
-                oscGain.gain.setValueAtTime(0.25, audioCtx.currentTime);
-                oscGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.04);
+                osc2.connect(gain2);
+                gain2.connect(audioCtx.destination);
                 
-                osc.connect(oscGain);
-                oscGain.connect(audioCtx.destination);
-                osc.start();
-                osc.stop(audioCtx.currentTime + 0.04);
+                osc1.start();
+                osc1.stop(audioCtx.currentTime + 0.25);
+                
+                osc2.start();
+                osc2.stop(audioCtx.currentTime + 0.15);
             } catch (e) {
                 console.warn("Web Audio API failed to play sound: User interaction required or context blocked.", e);
             }
@@ -751,11 +746,14 @@
             // Calculate the scale factor between the CSS display size and raw video dimensions
             const scale = video.videoWidth / videoStyleWidth;
 
-            // Compute the cropped region dimensions in raw pixel coordinates
-            const cropX = -videoStyleLeft * scale;
-            const cropY = -videoStyleTop * scale;
-            const cropWidth = containerWidth * scale;
-            const cropHeight = containerHeight * scale;
+            // Capture scale matches the high-resolution rendering scale factor (Math.max(devicePixelRatio, 2))
+            const captureScale = Math.max(window.devicePixelRatio, 2);
+
+            // Compute the cropped region dimensions in raw pixel coordinates scaled to high resolution
+            const cropX = -videoStyleLeft * scale * captureScale;
+            const cropY = -videoStyleTop * scale * captureScale;
+            const cropWidth = containerWidth * scale * captureScale;
+            const cropHeight = containerHeight * scale * captureScale;
 
             // Create a high-resolution composite canvas matching the container's aspect ratio
             const compositeCanvas = document.createElement('canvas');
@@ -768,13 +766,14 @@
             ctx.save();
             ctx.translate(cropWidth, 0);
             ctx.scale(-1, 1);
-            ctx.drawImage(video, -cropX, -cropY, video.videoWidth, video.videoHeight);
+            ctx.drawImage(video, -cropX, -cropY, video.videoWidth * captureScale, video.videoHeight * captureScale);
             ctx.restore();
 
             // 2. Draw the WebGL canvas (3D model overlay containing Jugnu)
             // The WebGL canvas is already rendered mirrored internally by the MindAR tracking solver.
             // Therefore, we draw it unmirrored (without scale(-1, 1)) so it is not double-flipped.
-            ctx.drawImage(canvas3D, -cropX, -cropY, video.videoWidth, video.videoHeight);
+            // Since it was rendered at high resolution, we draw it 1:1 on the high-res composite canvas.
+            ctx.drawImage(canvas3D, -cropX, -cropY, video.videoWidth * captureScale, video.videoHeight * captureScale);
 
             // 3. Trigger download
             try {
